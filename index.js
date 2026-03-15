@@ -1,9 +1,9 @@
 require('dotenv').config();
 const fs = require('fs');
-const http = require('http'); // Adicionado para manter o Render ativo
+const http = require('http');
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
 
-// Servidor HTTP simples para o Render não encerrar o processo
+// Servidor HTTP para o Render
 const server = http.createServer((req, res) => {
     res.writeHead(200);
     res.end('Bot is running!');
@@ -24,8 +24,8 @@ const MEU_ID = '601074003234521119';
 const CARGO_MEMBRO_ID = '1432386547222581270'; 
 const CANAL_BOAS_VINDAS_ID = '1432386634128687295';
 
-// Cooldown para evitar mensagens duplicadas
-const cooldowns = new Set();
+// Armazenamento para cooldown de comandos
+const cooldowns = new Map();
 
 function lerDados() {
     try {
@@ -43,7 +43,6 @@ client.once(Events.ClientReady, (c) => {
   console.log(`✅ Bot online! Logado como ${c.user.tag}`);
 });
 
-// --- EVENTO: NOVO MEMBRO ---
 client.on(Events.GuildMemberAdd, async (member) => {
   try {
     const role = member.guild.roles.cache.get(CARGO_MEMBRO_ID);
@@ -65,7 +64,6 @@ client.on(Events.GuildMemberAdd, async (member) => {
   }
 });
 
-// --- EVENTOS DE MENSAGEM ---
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
   
@@ -106,11 +104,15 @@ client.on(Events.MessageCreate, async (message) => {
 
   // --- 3. COMANDOS ---
   if (!message.content.startsWith(PREFIX)) return;
-  
-  // Anti-Spam: Verifica cooldown
-  if (cooldowns.has(uid)) return;
-  cooldowns.add(uid);
-  setTimeout(() => cooldowns.delete(uid), 3000); // 3 segundos de espera
+
+  // Bloqueio rigoroso de cooldown (Anti-Spam)
+  const now = Date.now();
+  if (cooldowns.has(uid)) {
+      const expirationTime = cooldowns.get(uid) + 5000;
+      if (now < expirationTime) return; 
+  }
+  cooldowns.set(uid, now);
+  setTimeout(() => cooldowns.delete(uid), 5000);
 
   const args = message.content.slice(PREFIX.length).trim().split(/ +/);
   const command = args.shift().toLowerCase();
