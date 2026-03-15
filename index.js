@@ -1,6 +1,14 @@
 require('dotenv').config();
 const fs = require('fs');
+const http = require('http'); // Adicionado para manter o Render ativo
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
+
+// Servidor HTTP simples para o Render não encerrar o processo
+const server = http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('Bot is running!');
+});
+server.listen(process.env.PORT || 3000);
 
 const client = new Client({
   intents: [
@@ -16,7 +24,9 @@ const MEU_ID = '601074003234521119';
 const CARGO_MEMBRO_ID = '1432386547222581270'; 
 const CANAL_BOAS_VINDAS_ID = '1432386634128687295';
 
-// Função para garantir que lemos os dados mais atuais do ficheiro
+// Cooldown para evitar mensagens duplicadas
+const cooldowns = new Set();
+
 function lerDados() {
     try {
         return JSON.parse(fs.readFileSync('./dados.json', 'utf8'));
@@ -59,7 +69,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
   
-  let dados = lerDados(); // Lê sempre o estado mais recente
+  let dados = lerDados();
   const uid = message.author.id;
 
   // --- 1. MODERAÇÃO ---
@@ -92,10 +102,16 @@ client.on(Events.MessageCreate, async (message) => {
     dados.userStats[uid].xp = 0;
     message.channel.send(`🎉 Parabéns ${message.author}, subiste para o **nível ${dados.userStats[uid].level}**!`);
   }
-  salvarDados(dados); // Salva o XP a cada mensagem para garantir persistência
+  salvarDados(dados);
 
   // --- 3. COMANDOS ---
   if (!message.content.startsWith(PREFIX)) return;
+  
+  // Anti-Spam: Verifica cooldown
+  if (cooldowns.has(uid)) return;
+  cooldowns.add(uid);
+  setTimeout(() => cooldowns.delete(uid), 3000); // 3 segundos de espera
+
   const args = message.content.slice(PREFIX.length).trim().split(/ +/);
   const command = args.shift().toLowerCase();
 
