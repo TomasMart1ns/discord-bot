@@ -4,8 +4,18 @@ const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } =
 const admin = require('firebase-admin');
 const path = require('path');
 
-// Inicialização do Firebase Admin com variável de ambiente FIREBASE_CONFIG (JSON string)
-const serviceAccount = path.join(__dirname, 'FIREBASE_CONFIG.json');
+// Firebase: usar variável de ambiente FIREBASE_CONFIG (produção) ou ficheiro local (desenvolvimento)
+let serviceAccount;
+if (process.env.FIREBASE_CONFIG) {
+  serviceAccount = JSON.parse(process.env.FIREBASE_CONFIG);
+} else {
+  const configPath = path.join(__dirname, 'FIREBASE_CONFIG.json');
+  if (fs.existsSync(configPath)) {
+    serviceAccount = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } else {
+    throw new Error('Firebase: define FIREBASE_CONFIG no .env ou coloca FIREBASE_CONFIG.json na pasta do projeto.');
+  }
+}
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
