@@ -4,34 +4,34 @@ const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } =
 const admin = require('firebase-admin');
 const path = require('path');
 
-// Firebase: usar variável de ambiente FIREBASE_CONFIG (produção) ou ficheiro local (desenvolvimento)
-let serviceAccount;
+// Firebase: opcional — usar FIREBASE_CONFIG (env) ou FIREBASE_CONFIG.json (local). Sem config, o bot corre na mesma.
+let db = null;
 if (process.env.FIREBASE_CONFIG) {
-  serviceAccount = JSON.parse(process.env.FIREBASE_CONFIG);
+  try {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_CONFIG);
+    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    db = admin.firestore();
+  } catch (e) {
+    console.warn('Firebase: FIREBASE_CONFIG inválido, a correr sem Firestore.', e.message);
+  }
 } else {
   const configPath = path.join(__dirname, 'FIREBASE_CONFIG.json');
   if (fs.existsSync(configPath)) {
-    serviceAccount = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    try {
+      const serviceAccount = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+      db = admin.firestore();
+    } catch (e) {
+      console.warn('Firebase: erro ao ler FIREBASE_CONFIG.json, a correr sem Firestore.', e.message);
+    }
   } else {
-    throw new Error('Firebase: define FIREBASE_CONFIG no .env ou coloca FIREBASE_CONFIG.json na pasta do projeto.');
+    console.warn('Firebase: sem FIREBASE_CONFIG nem FIREBASE_CONFIG.json — o bot corre sem Firestore.');
   }
 }
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
-
-const db = admin.firestore();
-
-// Exemplo: Salvar XP de um utilizador na Firestore
 async function salvarXP(userId, xp, level) {
-  await db.collection('usuarios').doc(userId).set(
-    {
-      xp: xp,
-      level: level,
-    },
-    { merge: true }
-  );
+  if (!db) return;
+  await db.collection('usuarios').doc(userId).set({ xp, level }, { merge: true });
 }
 
 const client = new Client({
