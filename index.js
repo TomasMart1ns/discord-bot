@@ -1,14 +1,28 @@
 require('dotenv').config();
 const fs = require('fs');
-const http = require('http');
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
+const admin = require('firebase-admin');
+const path = require('path');
 
-// Servidor HTTP para o Render
-const server = http.createServer((req, res) => {
-    res.writeHead(200);
-    res.end('Bot is running!');
+// Inicialização do Firebase Admin com variável de ambiente FIREBASE_CONFIG (JSON string)
+const serviceAccount = path.join(__dirname, 'FIREBASE_CONFIG.json');
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
 });
-server.listen(process.env.PORT || 3000);
+
+const db = admin.firestore();
+
+// Exemplo: Salvar XP de um utilizador na Firestore
+async function salvarXP(userId, xp, level) {
+  await db.collection('usuarios').doc(userId).set(
+    {
+      xp: xp,
+      level: level,
+    },
+    { merge: true }
+  );
+}
 
 const client = new Client({
   intents: [
@@ -119,6 +133,32 @@ client.on(Events.MessageCreate, async (message) => {
 
   if (command === 'avisos') message.reply(`Tens **${dados.userWarnings[uid] || 0}** avisos.`);
   if (command === 'nivel') message.reply(`📈 Nível: ${dados.userStats[uid].level} | XP: ${dados.userStats[uid].xp}`);
+
+  // Limpar mensagens: !limpar <quantidade>
+  if (command === 'limpar' || command === 'clear') {
+    if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+      return message.reply('❌ Não tens permissão para apagar mensagens.');
+    }
+
+    const amount = parseInt(args[0], 10);
+
+    if (isNaN(amount) || amount < 1 || amount > 100) {
+      return message.reply('❗ Usa: `!limpar <número entre 1 e 100>`');
+    }
+
+    // +1 para também apagar o comando
+    message.channel.bulkDelete(amount + 1, true)
+      .then(deleted => {
+        message.channel.send(`🧹 Apaguei **${deleted.size - 1}** mensagens.`)
+          .then(msg => setTimeout(() => msg.delete().catch(() => {}), 5000));
+      })
+      .catch(err => {
+        console.error('Erro ao limpar mensagens:', err);
+        message.reply('⚠️ Não consegui apagar as mensagens. Verifica se não são muito antigas (mais de 14 dias).');
+      });
+
+    return;
+  }
   
   if (command === 'addpalavra') {
     if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) return;
