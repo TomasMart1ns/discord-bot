@@ -1,7 +1,7 @@
 require('dotenv').config();
 const http = require('http');
 http.createServer((req, res) => {
-  res.write("Bot está vivo!");
+  res.write("Bot Online");
   res.end();
 }).listen(process.env.PORT || 10000);
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
@@ -165,47 +165,14 @@ async function getYtDlpBinary() {
  * StreamType.Arbitrary → FFmpeg (ffmpeg-static) descodifica WebM/M4A/etc.
  */
 async function createYoutubeAudioResource(guildId, videoUrl) {
-  const prev = ytdlpProcesses.get(guildId);
-  if (prev && !prev.killed) {
-    try {
-      prev.kill('SIGKILL');
-    } catch (_) {}
-  }
-
-  const bin = await getYtDlpBinary();
-  const stderrBuf = [];
-  const proc = spawn(
-    bin,
-    [
-      '-f', '251/250/249/ba[ext=webm]/bestaudio/ba/b',
-      '--no-playlist',
-      '--no-warnings',
-      '-o', '-',
-      videoUrl,
-    ],
-    { stdio: ['ignore', 'pipe', 'pipe'] }
-  );
-
-  ytdlpProcesses.set(guildId, proc);
-  proc.on('close', () => {
-    if (ytdlpProcesses.get(guildId) === proc) ytdlpProcesses.delete(guildId);
-  });
-  proc.stderr.on('data', (chunk) => {
-    stderrBuf.push(chunk);
-    const t = chunk.toString();
-    if (/ERROR|error:/i.test(t)) console.error('[yt-dlp]', t.trim());
-  });
-  proc.on('error', (e) => {
-    console.error('[yt-dlp] spawn:', e.message);
-  });
-  proc.on('exit', (code, signal) => {
-    if (code !== 0 && code != null) {
-      const tail = Buffer.concat(stderrBuf).toString('utf8').trim().slice(-600);
-      console.error(`[yt-dlp] exit ${code}${signal ? ` (${signal})` : ''}`, tail || '');
-    }
+  // O play-dl gera um stream que o Discord entende melhor
+  const source = await play.stream(videoUrl, {
+    discordPlayerCompatibility: true
   });
 
-  return createAudioResource(proc.stdout, { inputType: StreamType.Arbitrary });
+  return createAudioResource(source.stream, {
+    inputType: source.type
+  });
 }
 
 /** Canal de voz do utilizador (member.voice falha por vezes sem estado em cache). */
@@ -628,35 +595,21 @@ client.on(Events.MessageCreate, async (message) => {
       }
     }
   }
-  // --- COMANDO !play ---
+  // --- COMANDO PLAY ---
   if (command === 'play') {
-    let member = message.member;
-    if (!member) {
-      try {
-        member = await message.guild.members.fetch(message.author.id);
-      } catch {
-        return message.reply("⚠️ Não consegui obter o teu perfil no servidor. Tenta de novo.");
-      }
-    }
-    const canalVoz = await getMemberVoiceChannel(message.guild, message.author.id, member);
-
-    if (!canalVoz) {
-      return message.reply("⚠️ Precisas de estar num canal de voz para eu tocar música!");
-    }
+    const canalVoz = message.member?.voice?.channel;
+    if (!canalVoz) return message.reply("⚠️ Entra num canal de voz primeiro!");
 
     const busca = args.join(" ");
-    if (!busca) return message.reply("🎵 Diz-me o nome da música ou cola um link do YouTube!");
+    if (!busca) return message.reply("🎵 Diz o nome da música!");
 
     await message.channel.sendTyping();
 
     try {
-      // 1. Procurar a música (antes de ligar ao VC para não ficar "órfão" no canal)
       let info = await play.search(busca, { limit: 1 });
-      if (!info.length) return message.reply("❌ Não encontrei essa música.");
-
+      if (!info.length) return message.reply("❌ Não encontrei a música.");
       const track = info[0];
 
-      // 2. Conectar ao canal de voz
       const connection = joinVoiceChannel({
         channelId: canalVoz.id,
         guildId: message.guild.id,
@@ -664,14 +617,10 @@ client.on(Events.MessageCreate, async (message) => {
         selfDeaf: true,
       });
 
-      connection.on('stateChange', (oldState, newState) => {
-        console.log(`Conexão mudou de ${oldState.status} para ${newState.status}`);
-      });
-      await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+      // Aguardar conexão pronta (Crucial para o Render)
+      await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
 
-      // 3. Stream de áudio (yt-dlp — play.stream YouTube quebra sem URL nos formatos)
-      const resource = await createYoutubeAudioResource(message.guild.id, track.url);
-
+      const resource = await createYoutubeAudioResource(track.url);
       const player = createAudioPlayer({
         behaviors: { noSubscriber: NoSubscriberBehavior.Play }
       });
@@ -679,57 +628,33 @@ client.on(Events.MessageCreate, async (message) => {
       connection.subscribe(player);
       player.play(resource);
 
-      const thumb = track.thumbnails?.[0]?.url;
-      const musicEmbed = new EmbedBuilder()
+      const embed = new EmbedBuilder()
         .setColor(0xFF0000)
         .setTitle('🎶 A tocar agora')
-        .setDescription(`[${track.title}](${track.url})`);
-      if (thumb) musicEmbed.setThumbnail(thumb);
-      if (track.durationRaw) {
-        musicEmbed.addFields({ name: 'Duração', value: track.durationRaw, inline: true });
-      }
-      musicEmbed.setFooter({ text: `Pedido por ${message.author.username}` });
+        .setDescription(`[${track.title}](${track.url})`)
+        .setThumbnail(track.thumbnails[0]?.url)
+        .setFooter({ text: `Pedido por ${message.author.username}` });
 
-      message.channel.send({ embeds: [musicEmbed] });
+      message.channel.send({ embeds: [embed] });
 
-      // Erros no player
-      player.on('error', error => console.error(`Erro no Player: ${error.message}`));
+      player.on('error', err => console.error("Erro Player:", err.message));
 
     } catch (err) {
-      console.error('!play:', err?.stack || err?.message || err);
-      try {
-        // Espera a conexão estar pronta antes de tocar
-        await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
-        
-        const resource = await createYoutubeAudioResource(message.guild.id, track.url);
-        player.play(resource);
-      } catch (error) {
-        connection.destroy();
-        console.error("Erro ao conectar na call:", error);
-      }
+      console.error("Erro Play:", err);
+      message.reply("❌ Erro ao tocar música. Verifica se o FFmpeg está instalado.");
     }
   }
 
-  // --- COMANDO !sair ---
+  // --- COMANDO SAIR ---
   if (command === 'sair' || command === 'stop') {
     const connection = getVoiceConnection(message.guild.id);
-
-    const yproc = ytdlpProcesses.get(message.guild.id);
-    if (yproc && !yproc.killed) {
-      try {
-        yproc.kill('SIGKILL');
-      } catch (_) {}
-      ytdlpProcesses.delete(message.guild.id);
-    }
-
     if (connection) {
       connection.destroy();
-      message.reply("👋 Saí do canal de voz e parei a música!");
+      message.reply("👋 Saí!");
     } else {
-      message.reply("🤷‍♂️ Não estou em nenhum canal de voz.");
+      message.reply("Não estou em nenhum canal.");
     }
   }
-
   // Comando !rempalavra ou !removepalavra
   if (command === 'rempalavra' || command === 'removepalavra') {
     if (!isStaff) return;
