@@ -734,7 +734,7 @@ client.on(Events.MessageCreate, async (message) => {
       message.reply(respostaIA.trim());
 
     } catch (err) {
-      console.error("Erro na IA:", err);
+      console.error("Erro na AI:", err);
 
       if (err.message.includes("loading") || err.message.includes("503")) {
         return message.reply("😴 A IA está a iniciar os sistemas. Tenta novamente em 20 segundos!");
