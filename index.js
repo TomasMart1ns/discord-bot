@@ -79,6 +79,8 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
+    // Necessário para saber em que canal de voz o membro está (!play, etc.)
+    GatewayIntentBits.GuildVoiceStates,
   ],
 });
 
