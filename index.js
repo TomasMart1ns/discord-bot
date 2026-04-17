@@ -1,4 +1,9 @@
 require('dotenv').config();
+const http = require('http');
+http.createServer((req, res) => {
+  res.write("Bot está vivo!");
+  res.end();
+}).listen(process.env.PORT || 10000);
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const { HfInference } = require('@huggingface/inference');
 const admin = require('firebase-admin');
@@ -656,8 +661,12 @@ client.on(Events.MessageCreate, async (message) => {
         channelId: canalVoz.id,
         guildId: message.guild.id,
         adapterCreator: message.guild.voiceAdapterCreator,
+        selfDeaf: true,
       });
 
+      connection.on('stateChange', (oldState, newState) => {
+        console.log(`Conexão mudou de ${oldState.status} para ${newState.status}`);
+      });
       await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
 
       // 3. Stream de áudio (yt-dlp — play.stream YouTube quebra sem URL nos formatos)
@@ -689,13 +698,15 @@ client.on(Events.MessageCreate, async (message) => {
     } catch (err) {
       console.error('!play:', err?.stack || err?.message || err);
       try {
-        const conn = getVoiceConnection(message.guild.id);
-        if (conn) conn.destroy();
-      } catch (_) {}
-      const detail = (err?.message || String(err)).slice(0, 280);
-      message.reply(
-        `❌ Erro ao tentar tocar a música.\n\`${detail}\`\n\nSe o bot ficou na call, usa \`!sair\`.`
-      );
+        // Espera a conexão estar pronta antes de tocar
+        await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
+        
+        const resource = await createYoutubeAudioResource(message.guild.id, track.url);
+        player.play(resource);
+      } catch (error) {
+        connection.destroy();
+        console.error("Erro ao conectar na call:", error);
+      }
     }
   }
 
