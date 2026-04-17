@@ -12,7 +12,6 @@ const admin = require('firebase-admin');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const play = require('play-dl');
 const { helpers: ytdlpHelpers } = require('ytdlp-nodejs');
 const {
   joinVoiceChannel,
