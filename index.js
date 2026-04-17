@@ -4,7 +4,9 @@ const { HfInference } = require('@huggingface/inference');
 const admin = require('firebase-admin');
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 const play = require('play-dl');
+const { helpers: ytdlpHelpers } = require('ytdlp-nodejs');
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -12,6 +14,7 @@ const {
   NoSubscriberBehavior,
   entersState,
   VoiceConnectionStatus,
+  StreamType,
 } = require('@discordjs/voice');
 
 // 1. LIMPEZA NO TOPO - Variável global na RAM
@@ -129,6 +132,50 @@ async function getDisplayNameForUserId(guild, userId) {
   } catch (_) {
     return `<@${userId}>`;
   }
+}
+
+/** Subprocessos yt-dlp por guild (parar ao trocar de música / !sair). */
+const ytdlpProcesses = new Map();
+
+async function getYtDlpBinary() {
+  let bin = ytdlpHelpers.findYtdlpBinary();
+  if (!bin) {
+    await ytdlpHelpers.downloadYtDlp();
+    bin = ytdlpHelpers.findYtdlpBinary();
+  }
+  if (!bin) throw new Error('Binário yt-dlp não disponível.');
+  return bin;
+}
+
+/**
+ * Stream de áudio YouTube via yt-dlp (o play-dl falha: formatos sem URL direta → "Invalid URL").
+ * Saída WebM Opus (formato 251 / bestaudio), compatível com Discord.
+ */
+async function createYoutubeAudioResource(guildId, videoUrl) {
+  const prev = ytdlpProcesses.get(guildId);
+  if (prev && !prev.killed) {
+    try {
+      prev.kill('SIGKILL');
+    } catch (_) {}
+  }
+
+  const bin = await getYtDlpBinary();
+  const proc = spawn(
+    bin,
+    ['-f', 'bestaudio/ba/b', '--no-playlist', '--no-warnings', '-o', '-', videoUrl],
+    { stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+
+  ytdlpProcesses.set(guildId, proc);
+  proc.on('close', () => {
+    if (ytdlpProcesses.get(guildId) === proc) ytdlpProcesses.delete(guildId);
+  });
+  proc.stderr.on('data', (chunk) => {
+    const t = chunk.toString();
+    if (/ERROR|ERROR:/i.test(t)) console.error('[yt-dlp]', t.trim());
+  });
+
+  return createAudioResource(proc.stdout, { inputType: StreamType.WebmOpus });
 }
 
 /** Canal de voz do utilizador (member.voice falha por vezes sem estado em cache). */
@@ -588,9 +635,8 @@ client.on(Events.MessageCreate, async (message) => {
 
       await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
 
-      // 3. Stream de áudio
-      let stream = await play.stream(track.url);
-      const resource = createAudioResource(stream.stream, { inputType: stream.type });
+      // 3. Stream de áudio (yt-dlp — play.stream YouTube quebra sem URL nos formatos)
+      const resource = await createYoutubeAudioResource(message.guild.id, track.url);
 
       const player = createAudioPlayer({
         behaviors: { noSubscriber: NoSubscriberBehavior.Play }
@@ -625,6 +671,14 @@ client.on(Events.MessageCreate, async (message) => {
   if (command === 'sair' || command === 'stop') {
     const { getVoiceConnection } = require('@discordjs/voice');
     const connection = getVoiceConnection(message.guild.id);
+
+    const yproc = ytdlpProcesses.get(message.guild.id);
+    if (yproc && !yproc.killed) {
+      try {
+        yproc.kill('SIGKILL');
+      } catch (_) {}
+      ytdlpProcesses.delete(message.guild.id);
+    }
 
     if (connection) {
       connection.destroy();
