@@ -4,6 +4,8 @@ http.createServer((req, res) => {
   res.write("Bot Online");
   res.end();
 }).listen(process.env.PORT || 10000);
+const ffmpegPath = require('ffmpeg-static');
+const play = require('play-dl');
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const { HfInference } = require('@huggingface/inference');
 const admin = require('firebase-admin');
@@ -33,7 +35,7 @@ function lerDados() {
 
 // Firebase: opcional — usar FIREBASE_CONFIG (env) ou FIREBASE_CONFIG.json (local)
 let db = null;
-
+process.env.FFMPEG_BIN = ffmpegPath;
 // Reunir FIREBASE_CONFIG (uma variável) ou FIREBASE_CONFIG_1, FIREBASE_CONFIG_2, ...
 function getFirebaseConfigFromEnv() {
   if (process.env.FIREBASE_CONFIG) return process.env.FIREBASE_CONFIG.trim();
@@ -164,14 +166,14 @@ async function getYtDlpBinary() {
  * Stream de áudio YouTube via yt-dlp (o play-dl falha: formatos sem URL direta → "Invalid URL").
  * StreamType.Arbitrary → FFmpeg (ffmpeg-static) descodifica WebM/M4A/etc.
  */
-async function createYoutubeAudioResource(guildId, videoUrl) {
-  // O play-dl gera um stream que o Discord entende melhor
+async function createYoutubeAudioResource(videoUrl) {
   const source = await play.stream(videoUrl, {
     discordPlayerCompatibility: true
   });
-
-  return createAudioResource(source.stream, {
-    inputType: source.type
+  
+  return createAudioResource(source.stream, { 
+    inputType: source.type,
+    inlineVolume: true 
   });
 }
 
