@@ -122,6 +122,20 @@ async function getDisplayNameForUserId(guild, userId) {
   }
 }
 
+/** Canal de voz do utilizador (member.voice falha por vezes sem estado em cache). */
+async function getMemberVoiceChannel(guild, userId, member) {
+  const fromMember = member?.voice?.channel;
+  if (fromMember) return fromMember;
+  const cached = guild.voiceStates.cache.get(userId)?.channel;
+  if (cached) return cached;
+  try {
+    const vs = await guild.voiceStates.fetch(userId);
+    return vs.channel;
+  } catch {
+    return null;
+  }
+}
+
 // Cooldown para comandos
 const cooldowns = new Map();
 
@@ -530,8 +544,16 @@ client.on(Events.MessageCreate, async (message) => {
   }
   // --- COMANDO !play ---
   if (command === 'play') {
-    const canalVoz = message.member.voice.channel;
-    
+    let member = message.member;
+    if (!member) {
+      try {
+        member = await message.guild.members.fetch(message.author.id);
+      } catch {
+        return message.reply("⚠️ Não consegui obter o teu perfil no servidor. Tenta de novo.");
+      }
+    }
+    const canalVoz = await getMemberVoiceChannel(message.guild, message.author.id, member);
+
     if (!canalVoz) {
       return message.reply("⚠️ Precisas de estar num canal de voz para eu tocar música!");
     }
