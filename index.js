@@ -160,14 +160,47 @@ async function getYtDlpBinary() {
  * StreamType.Arbitrary → FFmpeg (ffmpeg-static) descodifica WebM/M4A/etc.
  */
 async function createYoutubeAudioResource(guildId, videoUrl) {
-  // Usar play-dl em vez de spawn(yt-dlp)
-  const stream = await play.stream(videoUrl, {
-    discordPlayerCompatibility: true
+  const prev = ytdlpProcesses.get(guildId);
+  if (prev && !prev.killed) {
+    try {
+      prev.kill('SIGKILL');
+    } catch (_) {}
+  }
+
+  const bin = await getYtDlpBinary();
+  const stderrBuf = [];
+  const proc = spawn(
+    bin,
+    [
+      '-f', '251/250/249/ba[ext=webm]/bestaudio/ba/b',
+      '--no-playlist',
+      '--no-warnings',
+      '-o', '-',
+      videoUrl,
+    ],
+    { stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+
+  ytdlpProcesses.set(guildId, proc);
+  proc.on('close', () => {
+    if (ytdlpProcesses.get(guildId) === proc) ytdlpProcesses.delete(guildId);
+  });
+  proc.stderr.on('data', (chunk) => {
+    stderrBuf.push(chunk);
+    const t = chunk.toString();
+    if (/ERROR|error:/i.test(t)) console.error('[yt-dlp]', t.trim());
+  });
+  proc.on('error', (e) => {
+    console.error('[yt-dlp] spawn:', e.message);
+  });
+  proc.on('exit', (code, signal) => {
+    if (code !== 0 && code != null) {
+      const tail = Buffer.concat(stderrBuf).toString('utf8').trim().slice(-600);
+      console.error(`[yt-dlp] exit ${code}${signal ? ` (${signal})` : ''}`, tail || '');
+    }
   });
 
-  return createAudioResource(stream.stream, {
-    inputType: stream.type
-  });
+  return createAudioResource(proc.stdout, { inputType: StreamType.Arbitrary });
 }
 
 /** Canal de voz do utilizador (member.voice falha por vezes sem estado em cache). */
