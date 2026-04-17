@@ -6,6 +6,7 @@ http.createServer((req, res) => {
 }).listen(process.env.PORT || 10000);
 const ffmpegPath = require('ffmpeg-static');
 const play = require('play-dl');
+const { createAudioResource, StreamType } = require('@discordjs/voice');
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const { HfInference } = require('@huggingface/inference');
 const admin = require('firebase-admin');
@@ -166,14 +167,21 @@ async function getYtDlpBinary() {
  * StreamType.Arbitrary → FFmpeg (ffmpeg-static) descodifica WebM/M4A/etc.
  */
 async function createYoutubeAudioResource(videoUrl) {
-  const source = await play.stream(videoUrl, {
-    discordPlayerCompatibility: true
-  });
-  
-  return createAudioResource(source.stream, { 
-    inputType: source.type,
-    inlineVolume: true 
-  });
+  try {
+      // Obter o stream do YouTube
+      const source = await play.stream(videoUrl, {
+          discordPlayerCompatibility: true
+      });
+
+      // Criar o recurso de áudio especificando o motor
+      return createAudioResource(source.stream, {
+          inputType: source.type,
+          inlineVolume: true
+      });
+  } catch (error) {
+      console.error("Erro ao criar recurso de áudio:", error);
+      throw error;
+  }
 }
 
 /** Canal de voz do utilizador (member.voice falha por vezes sem estado em cache). */
@@ -598,6 +606,12 @@ client.on(Events.MessageCreate, async (message) => {
   }
   // --- COMANDO PLAY ---
   if (command === 'play') {
+    const resource = await createYoutubeAudioResource(track.url);
+    const player = createAudioPlayer({
+      behaviors: { noSubscriber: NoSubscriberBehavior.Play }
+  });
+  connection.subscribe(player);
+  player.play(resource);
     const canalVoz = message.member?.voice?.channel;
     if (!canalVoz) return message.reply("⚠️ Entra num canal de voz primeiro!");
 
