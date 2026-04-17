@@ -4,6 +4,15 @@ const { HfInference } = require('@huggingface/inference');
 const admin = require('firebase-admin');
 const fs = require('fs');
 const path = require('path');
+const play = require('play-dl');
+const {
+  joinVoiceChannel,
+  createAudioPlayer,
+  createAudioResource,
+  NoSubscriberBehavior,
+  entersState,
+  VoiceConnectionStatus,
+} = require('@discordjs/voice');
 
 // 1. LIMPEZA NO TOPO - Variável global na RAM
 let dadosGlobais = { forbiddenWords: {}, userWarnings: {}, userStats: {} };
@@ -564,21 +573,25 @@ client.on(Events.MessageCreate, async (message) => {
     await message.channel.sendTyping();
 
     try {
-      // 1. Conectar ao canal de voz
+      // 1. Procurar a música (antes de ligar ao VC para não ficar "órfão" no canal)
+      let info = await play.search(busca, { limit: 1 });
+      if (!info.length) return message.reply("❌ Não encontrei essa música.");
+
+      const track = info[0];
+
+      // 2. Conectar ao canal de voz
       const connection = joinVoiceChannel({
         channelId: canalVoz.id,
         guildId: message.guild.id,
         adapterCreator: message.guild.voiceAdapterCreator,
       });
 
-      // 2. Procurar a música
-      let info = await play.search(busca, { limit: 1 });
-      if (!info.length) return message.reply("❌ Não encontrei essa música.");
+      await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
 
-      // 3. Criar o stream de áudio
-      let stream = await play.stream(info[0].url);
+      // 3. Stream de áudio
+      let stream = await play.stream(track.url);
       const resource = createAudioResource(stream.stream, { inputType: stream.type });
-      
+
       const player = createAudioPlayer({
         behaviors: { noSubscriber: NoSubscriberBehavior.Play }
       });
@@ -586,13 +599,16 @@ client.on(Events.MessageCreate, async (message) => {
       player.play(resource);
       connection.subscribe(player);
 
+      const thumb = track.thumbnails?.[0]?.url;
       const musicEmbed = new EmbedBuilder()
         .setColor(0xFF0000)
         .setTitle('🎶 A tocar agora')
-        .setDescription(`[${info[0].title}](${info[0].url})`)
-        .setThumbnail(info[0].thumbnails[0].url)
-        .addFields({ name: 'Duração', value: info[0].durationRaw, inline: true })
-        .setFooter({ text: `Pedido por ${message.author.username}` });
+        .setDescription(`[${track.title}](${track.url})`);
+      if (thumb) musicEmbed.setThumbnail(thumb);
+      if (track.durationRaw) {
+        musicEmbed.addFields({ name: 'Duração', value: track.durationRaw, inline: true });
+      }
+      musicEmbed.setFooter({ text: `Pedido por ${message.author.username}` });
 
       message.channel.send({ embeds: [musicEmbed] });
 
@@ -600,7 +616,7 @@ client.on(Events.MessageCreate, async (message) => {
       player.on('error', error => console.error(`Erro no Player: ${error.message}`));
 
     } catch (err) {
-      console.error(err);
+      console.error('!play:', err?.message || err);
       message.reply("❌ Erro ao tentar tocar a música. Tenta novamente!");
     }
   }
