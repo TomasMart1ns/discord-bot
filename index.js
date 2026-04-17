@@ -15,6 +15,7 @@ const {
   entersState,
   VoiceConnectionStatus,
   StreamType,
+  getVoiceConnection,
 } = require('@discordjs/voice');
 
 // 1. LIMPEZA NO TOPO - Variável global na RAM
@@ -85,6 +86,13 @@ async function salvarDadosUser(userId, xp, level, moedas) {
 const HF_TOKEN = process.env.HF_TOKEN;
 const hf = HF_TOKEN ? new HfInference(HF_TOKEN) : null;
 
+// ffmpeg-static: prism-media procura `require('ffmpeg-static')`; o pacote também aceita env FFMPEG_BIN
+try {
+  const ffmpegStatic = require('ffmpeg-static');
+  const p = typeof ffmpegStatic === 'string' ? ffmpegStatic : ffmpegStatic?.path;
+  if (p && !process.env.FFMPEG_BIN) process.env.FFMPEG_BIN = p;
+} catch (_) {}
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -149,7 +157,7 @@ async function getYtDlpBinary() {
 
 /**
  * Stream de áudio YouTube via yt-dlp (o play-dl falha: formatos sem URL direta → "Invalid URL").
- * Saída WebM Opus (formato 251 / bestaudio), compatível com Discord.
+ * StreamType.Arbitrary → FFmpeg (ffmpeg-static) descodifica WebM/M4A/etc.
  */
 async function createYoutubeAudioResource(guildId, videoUrl) {
   const prev = ytdlpProcesses.get(guildId);
@@ -160,9 +168,16 @@ async function createYoutubeAudioResource(guildId, videoUrl) {
   }
 
   const bin = await getYtDlpBinary();
+  const stderrBuf = [];
   const proc = spawn(
     bin,
-    ['-f', 'bestaudio/ba/b', '--no-playlist', '--no-warnings', '-o', '-', videoUrl],
+    [
+      '-f', '251/250/249/ba[ext=webm]/bestaudio/ba/b',
+      '--no-playlist',
+      '--no-warnings',
+      '-o', '-',
+      videoUrl,
+    ],
     { stdio: ['ignore', 'pipe', 'pipe'] }
   );
 
@@ -171,11 +186,21 @@ async function createYoutubeAudioResource(guildId, videoUrl) {
     if (ytdlpProcesses.get(guildId) === proc) ytdlpProcesses.delete(guildId);
   });
   proc.stderr.on('data', (chunk) => {
+    stderrBuf.push(chunk);
     const t = chunk.toString();
-    if (/ERROR|ERROR:/i.test(t)) console.error('[yt-dlp]', t.trim());
+    if (/ERROR|error:/i.test(t)) console.error('[yt-dlp]', t.trim());
+  });
+  proc.on('error', (e) => {
+    console.error('[yt-dlp] spawn:', e.message);
+  });
+  proc.on('exit', (code, signal) => {
+    if (code !== 0 && code != null) {
+      const tail = Buffer.concat(stderrBuf).toString('utf8').trim().slice(-600);
+      console.error(`[yt-dlp] exit ${code}${signal ? ` (${signal})` : ''}`, tail || '');
+    }
   });
 
-  return createAudioResource(proc.stdout, { inputType: StreamType.WebmOpus });
+  return createAudioResource(proc.stdout, { inputType: StreamType.Arbitrary });
 }
 
 /** Canal de voz do utilizador (member.voice falha por vezes sem estado em cache). */
@@ -642,8 +667,8 @@ client.on(Events.MessageCreate, async (message) => {
         behaviors: { noSubscriber: NoSubscriberBehavior.Play }
       });
 
-      player.play(resource);
       connection.subscribe(player);
+      player.play(resource);
 
       const thumb = track.thumbnails?.[0]?.url;
       const musicEmbed = new EmbedBuilder()
@@ -662,14 +687,20 @@ client.on(Events.MessageCreate, async (message) => {
       player.on('error', error => console.error(`Erro no Player: ${error.message}`));
 
     } catch (err) {
-      console.error('!play:', err?.message || err);
-      message.reply("❌ Erro ao tentar tocar a música. Tenta novamente!");
+      console.error('!play:', err?.stack || err?.message || err);
+      try {
+        const conn = getVoiceConnection(message.guild.id);
+        if (conn) conn.destroy();
+      } catch (_) {}
+      const detail = (err?.message || String(err)).slice(0, 280);
+      message.reply(
+        `❌ Erro ao tentar tocar a música.\n\`${detail}\`\n\nSe o bot ficou na call, usa \`!sair\`.`
+      );
     }
   }
 
   // --- COMANDO !sair ---
   if (command === 'sair' || command === 'stop') {
-    const { getVoiceConnection } = require('@discordjs/voice');
     const connection = getVoiceConnection(message.guild.id);
 
     const yproc = ytdlpProcesses.get(message.guild.id);
