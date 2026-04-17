@@ -6,7 +6,6 @@ http.createServer((req, res) => {
 }).listen(process.env.PORT || 10000);
 const ffmpegPath = require('ffmpeg-static');
 const play = require('play-dl');
-const { createAudioResource, StreamType } = require('@discordjs/voice');
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const { HfInference } = require('@huggingface/inference');
 const admin = require('firebase-admin');
