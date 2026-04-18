@@ -165,22 +165,10 @@ async function getYtDlpBinary() {
  * Stream de áudio YouTube via yt-dlp (o play-dl falha: formatos sem URL direta → "Invalid URL").
  * StreamType.Arbitrary → FFmpeg (ffmpeg-static) descodifica WebM/M4A/etc.
  */
+// --- FUNÇÃO DE ÁUDIO CORRIGIDA ---
 async function createYoutubeAudioResource(videoUrl) {
-  try {
-      // Obter o stream do YouTube
-      const source = await play.stream(videoUrl, {
-          discordPlayerCompatibility: true
-      });
-
-      // Criar o recurso de áudio especificando o motor
-      return createAudioResource(source.stream, {
-          inputType: source.type,
-          inlineVolume: true
-      });
-  } catch (error) {
-      console.error("Erro ao criar recurso de áudio:", error);
-      throw error;
-  }
+  const source = await play.stream(videoUrl, { discordPlayerCompatibility: true });
+  return createAudioResource(source.stream, { inputType: source.type, inlineVolume: true });
 }
 
 /** Canal de voz do utilizador (member.voice falha por vezes sem estado em cache). */
@@ -604,13 +592,8 @@ client.on(Events.MessageCreate, async (message) => {
     }
   }
   // --- COMANDO PLAY ---
+  // --- COMANDO PLAY (CORRIGIDO) ---
   if (command === 'play') {
-    const resource = await createYoutubeAudioResource(track.url);
-    const player = createAudioPlayer({
-      behaviors: { noSubscriber: NoSubscriberBehavior.Play }
-  });
-  connection.subscribe(player);
-  player.play(resource);
     const canalVoz = message.member?.voice?.channel;
     if (!canalVoz) return message.reply("⚠️ Entra num canal de voz primeiro!");
 
@@ -620,7 +603,7 @@ client.on(Events.MessageCreate, async (message) => {
     await message.channel.sendTyping();
 
     try {
-      let info = await play.search(busca, { limit: 1 });
+      const info = await play.search(busca, { limit: 1 });
       if (!info.length) return message.reply("❌ Não encontrei a música.");
       const track = info[0];
 
@@ -631,7 +614,6 @@ client.on(Events.MessageCreate, async (message) => {
         selfDeaf: true,
       });
 
-      // Aguardar conexão pronta (Crucial para o Render)
       await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
 
       const resource = await createYoutubeAudioResource(track.url);
@@ -651,11 +633,11 @@ client.on(Events.MessageCreate, async (message) => {
 
       message.channel.send({ embeds: [embed] });
 
-      player.on('error', err => console.error("Erro Player:", err.message));
+      player.on('error', err => console.error("Erro no Player:", err.message));
 
     } catch (err) {
-      console.error("Erro Play:", err);
-      message.reply("❌ Erro ao tocar música. Verifica se o FFmpeg está instalado.");
+      console.error("Erro no comando Play:", err);
+      message.reply("❌ Erro ao tocar música. Verifica os logs.");
     }
   }
 
@@ -664,9 +646,9 @@ client.on(Events.MessageCreate, async (message) => {
     const connection = getVoiceConnection(message.guild.id);
     if (connection) {
       connection.destroy();
-      message.reply("👋 Saí!");
+      message.reply("👋 Saí do canal!");
     } else {
-      message.reply("Não estou em nenhum canal.");
+      message.reply("Não estou num canal.");
     }
   }
   // Comando !rempalavra ou !removepalavra
