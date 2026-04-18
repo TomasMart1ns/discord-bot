@@ -9,13 +9,13 @@ const play = require('play-dl');
 const fs = require('fs');
 // Verifica se o ficheiro existe e carrega os cookies
 if (fs.existsSync('./cookies.json')) {
-    const cookies = JSON.parse(fs.readFileSync('./cookies.json', 'utf8'));
-    play.setToken({
-        youtube: {
-            cookie: cookies
-        }
-    });
-    console.log("✅ Cookies do YouTube carregados com sucesso!");
+  try {
+      // Esta é a forma correta e atualizada do play-dl para carregar ficheiros de auth
+      play.authorization('./cookies.json'); 
+      console.log("✅ Cookies do YouTube carregados via play.authorization!");
+  } catch (e) {
+      console.error("❌ Erro ao carregar cookies:", e.message);
+  }
 }
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const { HfInference } = require('@huggingface/inference');
