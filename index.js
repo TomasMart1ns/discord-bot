@@ -9,18 +9,22 @@ const play = require('play-dl');
 const fs = require('fs');
 // Verifica se o ficheiro existe e carrega os cookies
 // --- CARREGAR COOKIES DO YOUTUBE (VERSÃO STRING) ---
+// --- CARREGAR COOKIES DO YOUTUBE (VERSÃO ULTRA LIMPA) ---
 if (fs.existsSync('./cookies.json')) {
   try {
-      // Lemos o ficheiro. Se exportaste como JSON, isto vai falhar.
-      // Se exportaste como String, isto vai funcionar.
-      const cookiesRaw = fs.readFileSync('./cookies.json', 'utf8');
+      let cookiesRaw = fs.readFileSync('./cookies.json', 'utf8');
+      
+      // Remove quebras de linha, espaços extras e caracteres de controlo
+      const cleanCookies = cookiesRaw
+          .replace(/[\r\n]+/gm, "") // Remove saltos de linha
+          .trim();                 // Remove espaços no início e fim
 
       play.setToken({
           youtube: {
-              cookie: cookiesRaw.trim() // Aqui passamos a string pura
+              cookie: cleanCookies
           }
       });
-      console.log("✅ Cookies do YouTube injetados como String!");
+      console.log("✅ Cookies limpos e injetados!");
   } catch (e) {
       console.error("❌ Erro ao processar cookies:", e.message);
   }
