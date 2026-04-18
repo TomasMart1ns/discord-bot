@@ -7,28 +7,6 @@ http.createServer((req, res) => {
 const ffmpegPath = require('ffmpeg-static');
 const play = require('play-dl');
 const fs = require('fs');
-// Verifica se o ficheiro existe e carrega os cookies
-// --- CARREGAR COOKIES DO YOUTUBE (VERSÃO STRING) ---
-// --- CARREGAR COOKIES DO YOUTUBE (VERSÃO ULTRA LIMPA) ---
-if (fs.existsSync('./cookies.json')) {
-  try {
-      let cookiesRaw = fs.readFileSync('./cookies.json', 'utf8');
-      
-      // Remove quebras de linha, espaços extras e caracteres de controlo
-      const cleanCookies = cookiesRaw
-          .replace(/[\r\n]+/gm, "") // Remove saltos de linha
-          .trim();                 // Remove espaços no início e fim
-
-      play.setToken({
-          youtube: {
-              cookie: cleanCookies
-          }
-      });
-      console.log("✅ Cookies limpos e injetados!");
-  } catch (e) {
-      console.error("❌ Erro ao processar cookies:", e.message);
-  }
-}
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const { HfInference } = require('@huggingface/inference');
 const admin = require('firebase-admin');
@@ -53,7 +31,7 @@ let dadosGlobais = { forbiddenWords: {}, userWarnings: {}, userStats: {} };
 function lerDados() {
     return dadosGlobais;
 }
-
+play.authorization();
 // Firebase: opcional — usar FIREBASE_CONFIG (env) ou FIREBASE_CONFIG.json (local)
 let db = null;
 process.env.FFMPEG_BIN = ffmpegPath;
