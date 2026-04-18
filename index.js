@@ -328,54 +328,50 @@ client.on(Events.MessageCreate, async (message) => {
   if (!message.content.startsWith(PREFIX)) return;
   
   // Dentro do teu client.on('messageCreate', ...)
-  if (message.content.startsWith('!play')) {
-    const args = message.content.slice('!play'.length).trim().split(/ +/g);
-    const search = args.join(' ');
+  client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
 
-    if (!search) {
-        return message.reply("Precisas de enviar um link ou o nome de uma música!");
+    if (message.content.startsWith('!play')) {
+        // Define o que pesquisar logo no início para evitar o erro "args is not defined"
+        const searchArgs = message.content.slice('!play'.length).trim();
+
+        if (!searchArgs) {
+            return message.reply("Precisas de enviar um link ou o nome de uma música!");
+        }
+
+        const voiceChannel = message.member.voice.channel;
+        if (!voiceChannel) {
+            return message.reply("Precisas de estar num canal de voz primeiro!");
+        }
+
+        try {
+            message.channel.send(`🔍 **A procurar:** \`${searchArgs}\`...`);
+
+            const connection = joinVoiceChannel({
+                channelId: voiceChannel.id,
+                guildId: message.guild.id,
+                adapterCreator: message.guild.voiceAdapterCreator,
+            });
+
+            // Criar o recurso usando a variável searchArgs
+            const resource = await createYoutubeAudioResource(searchArgs);
+
+            const player = createAudioPlayer();
+            player.play(resource);
+            connection.subscribe(player);
+
+            message.channel.send(`🎶 **A tocar agora!**`);
+
+            player.on('error', error => {
+                console.error(`Erro no Player: ${error.message}`);
+            });
+
+        } catch (error) {
+            console.error("Erro no comando Play:", error);
+            message.reply("Houve um erro ao procurar a música. Tenta novamente.");
+        }
     }
-
-    // 1. Verificar se o utilizador está num canal de voz
-    const voiceChannel = message.member.voice.channel;
-    if (!voiceChannel) {
-        return message.reply("Precisas de estar num canal de voz primeiro!");
-    }
-
-    try {
-        message.channel.send(`🔍 **A procurar:** \`${search}\`...`);
-
-        // 2. Conectar ao canal de voz
-        const connection = joinVoiceChannel({
-            channelId: voiceChannel.id,
-            guildId: message.guild.id,
-            adapterCreator: message.guild.voiceAdapterCreator,
-        });
-
-        // 3. Criar o recurso de áudio (usando a tua função que corrigimos antes)
-        const resource = await createYoutubeAudioResource(search);
-
-        // 4. Criar e configurar o Player
-        const player = createAudioPlayer();
-        player.play(resource);
-        connection.subscribe(player);
-
-        message.channel.send(`🎶 a tocar agora!`);
-
-        // Debug para a consola da WispByte
-        console.log(`Sucesso! A tocar: ${search}`);
-
-        // Tratamento de erros do player
-        player.on('error', error => {
-            console.error(`Erro no Player: ${error.message}`);
-            message.channel.send("Houve um erro ao reproduzir o áudio.");
-        });
-
-    } catch (error) {
-        console.error("Erro no comando Play:", error);
-        message.reply("Não consegui encontrar ou tocar essa música. Verifica se o link é válido.");
-    }
-}
+});
   const command = args.shift().toLowerCase();
   const isStaff = message.member.permissions.has(PermissionsBitField.Flags.ManageMessages);
 
