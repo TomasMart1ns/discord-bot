@@ -8,13 +8,21 @@ const ffmpegPath = require('ffmpeg-static');
 const play = require('play-dl');
 const fs = require('fs');
 // Verifica se o ficheiro existe e carrega os cookies
+// --- CARREGAR COOKIES DO YOUTUBE (VERSÃO STRING) ---
 if (fs.existsSync('./cookies.json')) {
   try {
-      // Esta é a forma correta e atualizada do play-dl para carregar ficheiros de auth
-      play.authorization('./cookies.json'); 
-      console.log("✅ Cookies do YouTube carregados via play.authorization!");
+      // Lemos o ficheiro. Se exportaste como JSON, isto vai falhar.
+      // Se exportaste como String, isto vai funcionar.
+      const cookiesRaw = fs.readFileSync('./cookies.json', 'utf8');
+
+      play.setToken({
+          youtube: {
+              cookie: cookiesRaw.trim() // Aqui passamos a string pura
+          }
+      });
+      console.log("✅ Cookies do YouTube injetados como String!");
   } catch (e) {
-      console.error("❌ Erro ao carregar cookies:", e.message);
+      console.error("❌ Erro ao processar cookies:", e.message);
   }
 }
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
