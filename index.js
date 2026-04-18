@@ -20,7 +20,6 @@ if (fs.existsSync('./cookies.json')) {
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const { HfInference } = require('@huggingface/inference');
 const admin = require('firebase-admin');
-const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { helpers: ytdlpHelpers } = require('ytdlp-nodejs');
