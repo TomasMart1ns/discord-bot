@@ -6,7 +6,17 @@ http.createServer((req, res) => {
 }).listen(process.env.PORT || 10000);
 const ffmpegPath = require('ffmpeg-static');
 const play = require('play-dl');
-play.auth_err('./cookies.json');
+const fs = require('fs');
+// Verifica se o ficheiro existe e carrega os cookies
+if (fs.existsSync('./cookies.json')) {
+    const cookies = JSON.parse(fs.readFileSync('./cookies.json', 'utf8'));
+    play.setToken({
+        youtube: {
+            cookie: cookies
+        }
+    });
+    console.log("✅ Cookies do YouTube carregados com sucesso!");
+}
 const { Client, GatewayIntentBits, Events, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const { HfInference } = require('@huggingface/inference');
 const admin = require('firebase-admin');
